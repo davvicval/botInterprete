@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot de la Universidad de Sevilla</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        input { width: 300px; padding: 10px; }
+        button { padding: 10px; cursor: pointer; }
+        #resultado { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Bot de la Universidad de Sevilla</h1>
+    <input type="text" id="consulta" placeholder="Escribe tu pregunta aquí...">
+    <button onclick="buscar()">Buscar</button>
+    <div id="resultado"></div>
+
+    <script>
+        async function buscar() {
+            const consulta = document.getElementById("consulta").value;
+            const response = await fetch(`http://127.0.0.1:8000/buscar/?consulta=${consulta}`);
+            const data = await response.json();
+            
+            let resultadoDiv = document.getElementById("resultado");
+            resultadoDiv.innerHTML = "";
+
+            if (data.resultados) {
+                data.resultados.forEach(item => {
+                    resultadoDiv.innerHTML += `<p><b>${item.categoría}</b>: ${item.descripción} <a href="${item.url}" target="_blank">Ver más</a></p>`;
+                });
+            } else {
+                resultadoDiv.innerHTML = `<p>${data.respuesta}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>
