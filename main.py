@@ -8,8 +8,90 @@ from fastapi.middleware.cors import CORSMiddleware
 # Cargar el modelo en español de spaCy
 nlp = spacy.load("es_core_news_md")
 
-# Configurar CORS para permitir peticiones desde el frontend
+# Cargar el dataset
+df = pd.read_csv("universidad_sevilla.csv")
+
+# Crear el vectorizador de TF-IDF para las palabras clave
+vectorizer = TfidfVectorizer(stop_words='english')
+
+# Vectorizamos solo la columna "Palabras Clave"
+X = vectorizer.fit_transform(df["Palabras Clave"].fillna(""))  # Rellenar NaN por si acaso
+
+# Función para obtener sinónimos automáticos utilizando spaCy
+def obtener_sinonimos(palabra):
+    # Procesar la palabra usando spaCy
+    doc = nlp(palabra)
+    sinonimos = set()
+
+    # Usamos las entidades del vocabulario de spaCy para encontrar términos similares
+    for token in doc:
+        for similar_token in token.vocab:
+            if token.is_stop or similar_token.is_stop:
+                continue  # Ignorar stopwords
+            if token.text != similar_token.text and similar_token.vector.any():
+                similitud = token.similarity(similar_token)
+                if similitud > 0.7:  # Umbral para considerar un sinónimo
+                    sinonimos.add(similar_token.text)
+
+    return list(sinonimos)
+
+# Función para enriquecer la consulta automáticamente
+def enriquecer_consulta(consulta):
+    consulta = consulta.lower()
+    palabras = consulta.split()
+
+    # Agregar los sinónimos automáticamente
+    consulta_enriquecida = set(palabras)  # Comenzamos con las palabras originales
+
+    for palabra in palabras:
+        # Obtener sinónimos automáticos
+        sinonimos = obtener_sinonimos(palabra)
+        consulta_enriquecida.update(sinonimos)
+
+    return " ".join(consulta_enriquecida)
+
+# Función para realizar la búsqueda
+def buscar_info(consulta):
+    consulta_enriquecida = enriquecer_consulta(consulta)
+
+    consulta_vector = vectorizer.transform([consulta_enriquecida])
+    similitudes = cosine_similarity(consulta_vector, X).flatten()
+
+    # Obtener los índices ordenados por similitud (top 1 en lugar de 5)
+    indices_top = similitudes.argsort()[-1:][::-1]  # Obtenemos solo el índice más similar
+
+    # Lista para almacenar los resultados
+    resultados = []
+
+    for idx in indices_top:
+        mejor_coincidencia = df.iloc[idx]
+        categoria = mejor_coincidencia["Categoría"]
+        sim = similitudes[idx]
+
+        # Verificamos si la URL está vacía
+        url = mejor_coincidencia["URL"] if pd.notna(mejor_coincidencia["URL"]) else categoria
+
+        # Si la similitud es mayor que el umbral (ajustable)
+        if sim > 0.2:
+            resultados.append({
+                "categoría": categoria,
+                "descripción": mejor_coincidencia["Descripción"],
+                "url": url
+            })
+
+    # Si se encontró alguna coincidencia relevante
+    if resultados:
+        return {
+            "respuesta": "Encontré información relacionada con tu consulta.",
+            "resultados": resultados
+        }
+    else:
+        return {"respuesta": "No encontré información relevante. Prueba con otras palabras."}
+
+# Configuración de FastAPI
 app = FastAPI()
+
+# Habilitar CORS para el frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,76 +100,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Cargar el dataset
-df = pd.read_csv("universidad_sevilla.csv")
-
-# Crear el vectorizador de TF-IDF para palabras clave y categorías
-vectorizer = TfidfVectorizer(stop_words='english')  # Ignorar palabras vacías
-
-# Combinamos las columnas "Palabras Clave" y "Categoría" en una sola lista para el vectorizador
-df_combined = df["Palabras Clave"] + " " + df["Categoría"]  # Concatenamos palabras clave y categoría
-
-# Ajustamos el vectorizador para trabajar con ambas columnas combinadas
-X_combined = vectorizer.fit_transform(df_combined.fillna(""))  # Rellenar NaN por si acaso
-
-# Función para obtener sinónimos de una palabra utilizando spaCy
-def obtener_sinonimos(palabra):
-    doc = nlp(palabra)
-    sinonimos = set()
-
-    # Buscamos sinónimos de las palabras en la consulta utilizando el modelo de spaCy
-    for token in doc:
-        for syn in token.vocab.vectors:
-            if syn in token.vocab.vectors:
-                sinonimos.add(token.text)
-    return list(sinonimos)
-
-# Función de búsqueda con sinónimos
-def buscar_info(consulta):
-    consulta = consulta.lower()
-
-    # Obtén sinónimos de cada palabra en la consulta
-    palabras = consulta.split()
-    palabras_con_sinonimos = set(palabras)  # Comenzamos con las palabras originales
-
-    for palabra in palabras:
-        sinonimos = obtener_sinonimos(palabra)
-        palabras_con_sinonimos.update(sinonimos)
-
-    # Concatenamos todas las palabras con sinónimos para hacer la búsqueda
-    consulta_enriquecida = " ".join(palabras_con_sinonimos)
-
-    # Vectorizamos la consulta enriquecida
-    consulta_vector = vectorizer.transform([consulta_enriquecida])
-
-    # Calcular similitud coseno entre la consulta enriquecida y la combinación de palabras clave y categorías
-    similitudes = cosine_similarity(consulta_vector, X_combined).flatten()
-
-    # Obtener el índice de la fila con la mayor similitud
-    mejor_coincidencia_idx = similitudes.argmax()
-
-    # Obtener la fila correspondiente con la mayor similitud
-    mejor_coincidencia = df.iloc[mejor_coincidencia_idx]
-
-    # Verificar si la similitud es lo suficientemente alta
-    if similitudes[mejor_coincidencia_idx] > 0.4:  # Umbral de similitud (ajustable)
-        # Acceder correctamente a la fila de datos
-        categoria = mejor_coincidencia["Categoría"]
-        descripcion = mejor_coincidencia["Descripción"]
-        url = mejor_coincidencia["URL"]
-        
-        # Devolver la respuesta correcta
-        return {
-            "respuesta": f"Encontré algo relacionado con tu consulta.",
-            "resultados": [{
-                "categoría": categoria,
-                "descripción": descripcion,
-                "url": url
-            }]
-        }
-    else:
-        return {"respuesta": "No encontré información relevante. Prueba con otras palabras."}
-
 @app.get("/buscar/")
 def buscar(consulta: str = Query(..., title="Consulta")):
     return buscar_info(consulta)
@@ -95,7 +107,5 @@ def buscar(consulta: str = Query(..., title="Consulta")):
 @app.get("/")
 def inicio():
     return {"mensaje": "Bot de la Universidad de Sevilla activo. Usa /buscar/?consulta=... para hacer una búsqueda."}
-
-
 
 
