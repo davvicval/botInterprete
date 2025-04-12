@@ -20,13 +20,16 @@
     <script>
         async function buscar() {
             const consulta = document.getElementById("consulta").value;
-            const response = await fetch(`http://127.0.0.1:8000/buscar/?consulta=${consulta}`);
+            const response = await fetch(`http://127.0.0.1:8000/buscar/?consulta=${encodeURIComponent(consulta)}`);
             const data = await response.json();
-            
+
             let resultadoDiv = document.getElementById("resultado");
             resultadoDiv.innerHTML = "";
 
             if (data.resultados) {
+                if (data.respuesta) {
+                    resultadoDiv.innerHTML += `<p><i>${data.respuesta}</i></p>`;
+                }
                 data.resultados.forEach(item => {
                     resultadoDiv.innerHTML += `<p><b>${item.categoría}</b>: ${item.descripción} <a href="${item.url}" target="_blank">Ver más</a></p>`;
                 });
@@ -37,3 +40,4 @@
     </script>
 </body>
 </html>
+
