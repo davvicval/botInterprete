@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 nlp = spacy.load("es_core_news_md")
 
 # Cargar el dataset
-df = pd.read_csv("universidad_sevilla.csv")
+df = pd.read_csv("universidad_sevilla_mod.csv")
 
 # Crear el vectorizador de TF-IDF para las palabras clave
 vectorizer = TfidfVectorizer(stop_words='english')
@@ -57,8 +57,8 @@ def buscar_info(consulta):
     consulta_vector = vectorizer.transform([consulta_enriquecida])
     similitudes = cosine_similarity(consulta_vector, X).flatten()
 
-    # Obtener los índices ordenados por similitud (top 1 en lugar de 5)
-    indices_top = similitudes.argsort()[-1:][::-1]  # Obtenemos solo el índice más similar
+    # Obtener los índices ordenados por similitud (top 2 en lugar de 1)
+    indices_top = similitudes.argsort()[-2:][::-1]  # Obtenemos los dos índices más similares
 
     # Lista para almacenar los resultados
     resultados = []
@@ -107,5 +107,6 @@ def buscar(consulta: str = Query(..., title="Consulta")):
 @app.get("/")
 def inicio():
     return {"mensaje": "Bot de la Universidad de Sevilla activo. Usa /buscar/?consulta=... para hacer una búsqueda."}
+
 
 
